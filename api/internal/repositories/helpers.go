@@ -9,7 +9,8 @@ var (
 	ErrNotFound           = errors.New("not found")
 	ErrDuplicateEmail     = errors.New("email already exists")
 	ErrDuplicateOrgName   = errors.New("organization name already exists")
-	ErrDuplicateMembership = errors.New("user is already a member of this organization")
+	ErrDuplicateMembership     = errors.New("user is already a member of this organization")
+	ErrDuplicateConnectionName = errors.New("connection name already exists for this organization")
 )
 
 func isUniqueViolation(err error) bool {

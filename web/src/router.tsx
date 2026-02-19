@@ -11,6 +11,7 @@ import { OrgListPage } from './pages/organizations/OrgListPage';
 import { OrgDashboardPage } from './pages/organizations/OrgDashboardPage';
 import { MembersPage } from './pages/settings/MembersPage';
 import { APIKeysPage } from './pages/settings/APIKeysPage';
+import { ConnectionsPage } from './pages/connections/ConnectionsPage';
 
 const rootRoute = createRootRoute({
   component: Layout,
@@ -60,6 +61,12 @@ const apiKeysRoute = createRoute({
   component: APIKeysPage,
 });
 
+const connectionsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/organizations/$orgId/connections',
+  component: ConnectionsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   authLoginRoute,
   authRegisterRoute,
@@ -68,6 +75,7 @@ const routeTree = rootRoute.addChildren([
     orgDashboardRoute,
     membersRoute,
     apiKeysRoute,
+    connectionsRoute,
   ]),
 ]);
 

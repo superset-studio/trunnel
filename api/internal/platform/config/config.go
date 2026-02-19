@@ -22,8 +22,9 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	// Load .env if present; ignore error if file doesn't exist.
+	// Load .env if present; try current dir first, then parent (for `cd api && ...`).
 	_ = godotenv.Load()
+	_ = godotenv.Load("../.env")
 
 	cfg := &Config{
 		Port:      getEnv("PORT", "9650"),

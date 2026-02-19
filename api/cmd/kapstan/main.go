@@ -10,12 +10,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
 	"github.com/spf13/cobra"
 
 	"github.com/superset-studio/kapstan/api/internal/controllers"
+	"github.com/superset-studio/kapstan/api/internal/jobs"
 	"github.com/superset-studio/kapstan/api/internal/platform/config"
 	"github.com/superset-studio/kapstan/api/internal/platform/database"
 	"github.com/superset-studio/kapstan/api/internal/platform/logging"
+	"github.com/superset-studio/kapstan/api/internal/repositories"
+	"github.com/superset-studio/kapstan/api/internal/services"
 )
 
 var version = "dev"
@@ -55,7 +61,38 @@ func serverCmd() *cobra.Command {
 
 			logger.Info("database connected")
 
-			e := controllers.NewRouter(db, cfg.JWTSecret)
+			// Create pgx pool for River.
+			pool, err := pgxpool.New(cmd.Context(), cfg.DatabaseURL)
+			if err != nil {
+				return fmt.Errorf("creating pgx pool: %w", err)
+			}
+			defer pool.Close()
+
+			// Run River migrations.
+			migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+			if err != nil {
+				return fmt.Errorf("creating river migrator: %w", err)
+			}
+			if _, err := migrator.Migrate(cmd.Context(), rivermigrate.DirectionUp, nil); err != nil {
+				return fmt.Errorf("running river migrations: %w", err)
+			}
+			logger.Info("river migrations complete")
+
+			// Build connection service for River workers.
+			connRepo := repositories.NewConnectionRepository(db)
+			connService := services.NewConnectionService(connRepo, cfg.EncryptionKey)
+
+			// Create and start River client.
+			riverClient, err := jobs.NewJobClient(pool, connService)
+			if err != nil {
+				return fmt.Errorf("creating river client: %w", err)
+			}
+			if err := riverClient.Start(cmd.Context()); err != nil {
+				return fmt.Errorf("starting river client: %w", err)
+			}
+			logger.Info("river job worker started")
+
+			e := controllers.NewRouter(db, cfg.JWTSecret, cfg.EncryptionKey)
 
 			// Start server in a goroutine.
 			go func() {
@@ -76,6 +113,11 @@ func serverCmd() *cobra.Command {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
+
+			// Stop River client.
+			if err := riverClient.Stop(ctx); err != nil {
+				logger.Error("river client stop error", slog.String("error", err.Error()))
+			}
 
 			if err := e.Shutdown(ctx); err != nil {
 				return fmt.Errorf("server shutdown: %w", err)

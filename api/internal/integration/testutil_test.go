@@ -25,9 +25,10 @@ import (
 
 // Shared state set by TestMain.
 var (
-	testDB     *sqlx.DB
-	testRouter *echo.Echo
-	jwtSecret  = []byte("integration-test-secret-key-1234")
+	testDB            *sqlx.DB
+	testRouter        *echo.Echo
+	jwtSecret         = []byte("integration-test-secret-key-1234")
+	testEncryptionKey = []byte("01234567890123456789012345678901") // 32 bytes
 )
 
 // Response types matching API JSON.
@@ -135,7 +136,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Build the HTTP router.
-	testRouter = controllers.NewRouter(testDB, jwtSecret)
+	testRouter = controllers.NewRouter(testDB, jwtSecret, testEncryptionKey)
 
 	// Run tests.
 	code := m.Run()
@@ -176,7 +177,7 @@ func replaceDBName(connStr, newDB string) string {
 // truncateTables clears all data between tests.
 func truncateTables(t *testing.T) {
 	t.Helper()
-	_, err := testDB.Exec("TRUNCATE refresh_tokens, api_keys, organization_members, organizations, users CASCADE")
+	_, err := testDB.Exec("TRUNCATE connections, refresh_tokens, api_keys, organization_members, organizations, users CASCADE")
 	require.NoError(t, err, "truncating tables")
 }
 

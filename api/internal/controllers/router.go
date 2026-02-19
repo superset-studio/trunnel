@@ -15,7 +15,7 @@ import (
 	"github.com/superset-studio/kapstan/api/internal/services"
 )
 
-func NewRouter(db *sqlx.DB, jwtSecret []byte) *echo.Echo {
+func NewRouter(db *sqlx.DB, jwtSecret []byte, encryptionKey []byte) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
@@ -46,14 +46,18 @@ func NewRouter(db *sqlx.DB, jwtSecret []byte) *echo.Echo {
 	apiKeyRepo := repositories.NewAPIKeyRepository(db)
 	tokenRepo := repositories.NewRefreshTokenRepository(db)
 
+	connRepo := repositories.NewConnectionRepository(db)
+
 	authService := services.NewAuthService(db, jwtManager, userRepo, orgRepo, memberRepo, tokenRepo)
 	orgService := services.NewOrganizationService(db, orgRepo, memberRepo, userRepo)
 	apiKeySvc := services.NewAPIKeyService(apiKeyRepo)
+	connService := services.NewConnectionService(connRepo, encryptionKey)
 
 	authCtrl := NewAuthController(authService)
 	orgCtrl := NewOrganizationController(orgService)
 	memberCtrl := NewMemberController(orgService)
 	apiKeyCtrl := NewAPIKeyController(apiKeySvc)
+	connCtrl := NewConnectionController(connService)
 
 	// Public auth routes.
 	authGroup := e.Group("/api/v1/auth")
@@ -85,6 +89,15 @@ func NewRouter(db *sqlx.DB, jwtSecret []byte) *echo.Echo {
 	apiKeysGroup.POST("", apiKeyCtrl.CreateAPIKey)
 	apiKeysGroup.GET("", apiKeyCtrl.ListAPIKeys)
 	apiKeysGroup.DELETE("/:key_id", apiKeyCtrl.RevokeAPIKey, middleware.RequireRole(models.RoleAdmin))
+
+	// Connections.
+	connectionsGroup := tenantGroup.Group("/connections")
+	connectionsGroup.POST("", connCtrl.CreateConnection, middleware.RequireRole(models.RoleAdmin))
+	connectionsGroup.GET("", connCtrl.ListConnections)
+	connectionsGroup.GET("/:conn_id", connCtrl.GetConnection)
+	connectionsGroup.PUT("/:conn_id", connCtrl.UpdateConnection, middleware.RequireRole(models.RoleAdmin))
+	connectionsGroup.DELETE("/:conn_id", connCtrl.DeleteConnection, middleware.RequireRole(models.RoleAdmin))
+	connectionsGroup.POST("/:conn_id/validate", connCtrl.ValidateConnection, middleware.RequireRole(models.RoleAdmin))
 
 	return e
 }
