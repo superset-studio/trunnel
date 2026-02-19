@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: build dev test lint migrate docker docker-web ci clean fmt install help
+.PHONY: build dev test test-integration lint migrate docker docker-web ci clean fmt install help
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -12,6 +12,9 @@ build:  ## Build server and CLI binaries
 
 test:  ## Run all Go tests
 	cd api && go test ./...
+
+test-integration:  ## Run integration tests (requires TEST_DATABASE_URL)
+	cd api && go test -tags integration -v -count=1 ./internal/integration/
 
 lint:  ## Run Go linter
 	cd api && golangci-lint run
