@@ -1,0 +1,18 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  bin = "tmp/kapstan"
+  cmd = "go build -o tmp/kapstan ./cmd/kapstan"
+  args_bin = ["server"]
+  delay = 1000
+  exclude_dir = ["tmp", "migrations"]
+  exclude_regex = ["_test\\.go$"]
+  include_ext = ["go"]
+  kill_delay = 500
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true

@@ -1,0 +1,2 @@
+-- Phase 0: initial migration to verify the migration system works.
+-- Domain tables are created in Phase 1+.
