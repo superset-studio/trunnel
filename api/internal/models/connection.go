@@ -21,6 +21,7 @@ const (
 	ConnectionStatusValid   ConnectionStatus = "valid"
 	ConnectionStatusInvalid ConnectionStatus = "invalid"
 	ConnectionStatusExpired ConnectionStatus = "expired"
+	ConnectionStatusPartial ConnectionStatus = "partial"
 )
 
 type Connection struct {

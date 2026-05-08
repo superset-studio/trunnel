@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   createConnection,
   deleteConnection,
+  getServerAWSIdentity,
   listConnections,
   validateConnection,
 } from '../../api/connections';
-import type { Connection } from '../../api/connections';
+import type { Connection, PermissionCheck } from '../../api/connections';
 import { Select } from '../../components/Select';
 import { InfoIcon, Tooltip } from '../../components/Tooltip';
 
@@ -18,6 +19,7 @@ const statusColors: Record<string, string> = {
   valid: 'bg-green-100 text-green-800',
   invalid: 'bg-red-100 text-red-800',
   expired: 'bg-slate-100 text-slate-600',
+  partial: 'bg-orange-100 text-orange-800',
 };
 
 const regionOptions = [
@@ -31,6 +33,76 @@ const regionOptions = [
   'ap-southeast-1',
   'ap-northeast-1',
 ].map((r) => ({ value: r, label: r }));
+
+const AWS_PERMISSIONS_POLICY = JSON.stringify(
+  {
+    Version: '2012-10-17',
+    Statement: [
+      {
+        Effect: 'Allow',
+        Action: ['ec2:*', 'eks:*', 'iam:*', 's3:*', 'rds:*'],
+        Resource: '*',
+      },
+    ],
+  },
+  null,
+  2
+);
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="absolute top-2 right-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs px-2 py-1 rounded transition-colors cursor-pointer"
+    >
+      {copied ? 'Copied!' : 'Copy'}
+    </button>
+  );
+}
+
+function CodeBlock({ code }: { code: string }) {
+  return (
+    <div className="relative">
+      <CopyButton text={code} />
+      <pre className="bg-slate-800 text-green-400 p-3 rounded text-xs font-mono overflow-x-auto">
+        {code}
+      </pre>
+    </div>
+  );
+}
+
+function PermissionBadges({ permissions }: { permissions?: PermissionCheck[] }) {
+  if (!permissions || permissions.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {permissions.map((p) => (
+        <Tooltip
+          key={p.service}
+          content={p.passed ? `${p.service.toUpperCase()} — OK` : `${p.service.toUpperCase()} — ${p.error ?? 'Permission denied'}`}
+        >
+          <span
+            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
+              p.passed
+                ? 'bg-green-100 text-green-700'
+                : 'bg-red-100 text-red-700'
+            }`}
+          >
+            {p.service}
+          </span>
+        </Tooltip>
+      ))}
+    </div>
+  );
+}
 
 function getAuthLabel(conn: Connection): string {
   const method = conn.config?.authMethod;
@@ -48,12 +120,46 @@ export function ConnectionsPage() {
   const [secretAccessKey, setSecretAccessKey] = useState('');
   const [roleArn, setRoleArn] = useState('');
   const [externalId, setExternalId] = useState('');
+  const [showSetupHelp, setShowSetupHelp] = useState(false);
 
   const { data: connections, isLoading } = useQuery({
     queryKey: ['connections', orgId],
     queryFn: () => listConnections(orgId),
     enabled: !!orgId,
   });
+
+  const { data: serverIdentity } = useQuery({
+    queryKey: ['aws-identity'],
+    queryFn: getServerAWSIdentity,
+    enabled: authMethod === 'iam-role' && showSetupHelp,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const trustPolicy = useMemo(() => {
+    if (!serverIdentity?.accountId) return null;
+    return JSON.stringify(
+      {
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Effect: 'Allow',
+            Principal: {
+              AWS: `arn:aws:iam::${serverIdentity.accountId}:root`,
+            },
+            Action: 'sts:AssumeRole',
+            Condition: {
+              StringEquals: {
+                'sts:ExternalId':
+                  externalId || '<enter external ID above>',
+              },
+            },
+          },
+        ],
+      },
+      null,
+      2
+    );
+  }, [serverIdentity?.accountId, externalId]);
 
   const createMutation = useMutation({
     mutationFn: () => {
@@ -165,37 +271,61 @@ export function ConnectionsPage() {
                 IAM Role
               </button>
             </div>
-            <Tooltip
-              wide
-              content={
-                authMethod === 'access-keys' ? (
-                  <span>
-                    Create an IAM user with programmatic access. The user needs
-                    these managed policies:
-                    <br />
-                    <br />
-                    <strong>Required:</strong> AmazonEC2FullAccess, AmazonEKSClusterPolicy, AmazonVPCFullAccess, IAMFullAccess
-                    <br />
-                    <br />
-                    <strong>Optional:</strong> AmazonS3FullAccess, AmazonRDSFullAccess (for managed databases)
-                  </span>
-                ) : (
-                  <span>
-                    Create an IAM role in your AWS account that trusts
-                    Kapstan's account. Set the External ID to a unique secret you choose.
-                    <br />
-                    <br />
-                    <strong>Trust policy:</strong> Allow sts:AssumeRole from Kapstan's AWS account with the External ID condition.
-                    <br />
-                    <br />
-                    <strong>Permissions:</strong> Attach the same policies as Access Keys (EC2, EKS, VPC, IAM).
-                  </span>
-                )
-              }
+            <button
+              type="button"
+              onClick={() => setShowSetupHelp(!showSetupHelp)}
+              className="text-sm text-brand-600 hover:text-brand-700 underline underline-offset-2 cursor-pointer"
             >
-              <InfoIcon />
-            </Tooltip>
+              {showSetupHelp ? 'Hide setup instructions' : 'Show setup instructions'}
+            </button>
           </div>
+
+          {/* Setup instructions */}
+          {showSetupHelp && (
+            <div className="bg-stone-50 border border-stone-200 rounded-lg p-4 space-y-3">
+              {authMethod === 'access-keys' ? (
+                <>
+                  <p className="text-sm text-slate-700 font-medium">How to set up Access Keys</p>
+                  <ol className="text-sm text-slate-600 space-y-3 list-decimal list-inside">
+                    <li>Create an IAM user with programmatic access in your AWS account.</li>
+                    <li>
+                      Attach the following permissions policy to the user:
+                      <div className="mt-2">
+                        <CodeBlock code={AWS_PERMISSIONS_POLICY} />
+                      </div>
+                    </li>
+                    <li>Copy the Access Key ID and Secret Access Key and enter them below.</li>
+                  </ol>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-700 font-medium">How to set up an IAM Role</p>
+                  <ol className="text-sm text-slate-600 space-y-3 list-decimal list-inside">
+                    <li>Create an IAM role in your AWS account.</li>
+                    <li>
+                      Set this trust policy on the role:
+                      <div className="mt-2">
+                        {trustPolicy ? (
+                          <CodeBlock code={trustPolicy} />
+                        ) : (
+                          <p className="text-xs text-slate-400 italic">
+                            Loading Kapstan server identity...
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                    <li>
+                      Attach this permissions policy to the role:
+                      <div className="mt-2">
+                        <CodeBlock code={AWS_PERMISSIONS_POLICY} />
+                      </div>
+                    </li>
+                    <li>Copy the Role ARN and enter it above.</li>
+                  </ol>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center gap-3 flex-wrap">
             {authMethod === 'access-keys' ? (
@@ -294,6 +424,7 @@ export function ConnectionsPage() {
                     >
                       {conn.status}
                     </span>
+                    <PermissionBadges permissions={conn.config?.permissions} />
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-500">
                     {conn.config?.region ?? '-'}

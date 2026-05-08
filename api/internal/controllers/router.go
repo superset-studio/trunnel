@@ -68,6 +68,11 @@ func NewRouter(db *sqlx.DB, jwtSecret []byte, encryptionKey []byte) *echo.Echo {
 	// JWT-protected routes.
 	jwtMiddleware := middleware.JWTAuth(jwtManager)
 
+	// Setup helpers (JWT-protected, no tenant scope).
+	setupCtrl := NewSetupController()
+	setupGroup := e.Group("/api/v1/setup", jwtMiddleware)
+	setupGroup.GET("/aws-identity", setupCtrl.GetAWSIdentity)
+
 	orgsGroup := e.Group("/api/v1/organizations", jwtMiddleware)
 	orgsGroup.POST("", orgCtrl.CreateOrganization)
 	orgsGroup.GET("", orgCtrl.ListOrganizations)

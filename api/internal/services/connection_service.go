@@ -144,11 +144,24 @@ func (s *ConnectionService) validateAndUpdate(ctx context.Context, conn *models.
 	info, err := prov.GetAccountInfo(ctx)
 	if err == nil {
 		s.mergeAccountInfo(conn, info)
-		_ = s.connRepo.UpdateStatusAndConfig(ctx, conn.ID, conn.Status, now, conn.Config)
-	} else {
-		_ = s.connRepo.UpdateStatus(ctx, conn.ID, conn.Status, now)
 	}
 
+	// Run permission checks and determine final status.
+	permResults := prov.TestPermissions(ctx)
+	s.mergePermissionResults(conn, permResults)
+
+	allPassed := true
+	for _, r := range permResults {
+		if !r.Passed {
+			allPassed = false
+			break
+		}
+	}
+	if !allPassed {
+		conn.Status = models.ConnectionStatusPartial
+	}
+
+	_ = s.connRepo.UpdateStatusAndConfig(ctx, conn.ID, conn.Status, now, conn.Config)
 	return conn, nil
 }
 
@@ -182,6 +195,18 @@ func (s *ConnectionService) mergeAccountInfo(conn *models.Connection, info *prov
 	if info.UserARN != "" {
 		existing["userArn"] = info.UserARN
 	}
+	merged, err := json.Marshal(existing)
+	if err == nil {
+		conn.Config = merged
+	}
+}
+
+func (s *ConnectionService) mergePermissionResults(conn *models.Connection, results []provider.PermissionCheckResult) {
+	existing := make(map[string]interface{})
+	if conn.Config != nil {
+		_ = json.Unmarshal(conn.Config, &existing)
+	}
+	existing["permissions"] = results
 	merged, err := json.Marshal(existing)
 	if err == nil {
 		conn.Config = merged

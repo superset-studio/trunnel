@@ -1,5 +1,19 @@
 import client from './client';
 
+export interface PermissionCheck {
+  service: string;
+  passed: boolean;
+  error?: string;
+}
+
+export interface ConnectionConfig {
+  region?: string;
+  authMethod?: string;
+  accountId?: string;
+  userArn?: string;
+  permissions?: PermissionCheck[];
+}
+
 export interface Connection {
   id: string;
   tenantId: string;
@@ -7,7 +21,7 @@ export interface Connection {
   category: string;
   status: string;
   lastValidated?: string;
-  config?: Record<string, string>;
+  config?: ConnectionConfig;
   createdBy?: string;
   createdAt: string;
   updatedAt: string;
@@ -24,6 +38,16 @@ export interface UpdateConnectionData {
   name?: string;
   credentials?: Record<string, string>;
   config?: Record<string, string>;
+}
+
+export interface ServerAWSIdentity {
+  accountId: string;
+  arn: string;
+}
+
+export async function getServerAWSIdentity(): Promise<ServerAWSIdentity> {
+  const res = await client.get<ServerAWSIdentity>('/setup/aws-identity');
+  return res.data;
 }
 
 export async function createConnection(
